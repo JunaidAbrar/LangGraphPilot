@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
-
+from agent.guardrails import obfuscate_pii
 from agent.state import AgentState
 from agent.prompting import get_system_prompt
 from agent.validation import validate_sql, generate_repair_prompt
@@ -94,6 +94,7 @@ def summarize_node(state: AgentState):
     )
     response = llm.invoke([HumanMessage(content=summary_prompt)])
     final_text = response.content
+    safe_text = obfuscate_pii(final_text)
 
     # 2. Heuristic Auto-Plotter
     plot_spec = None
@@ -114,7 +115,8 @@ def summarize_node(state: AgentState):
         except Exception:
             pass # Fail silently on plot, deliver text
 
-    return {"final_answer": final_text, "visualization_spec": plot_spec}
+    return {"final_answer": safe_text, "visualization_spec": plot_spec}
+ 
 
 # --- FLOW ---
 
