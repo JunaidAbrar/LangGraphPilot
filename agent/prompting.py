@@ -6,22 +6,29 @@ You are an elite SQL Data Analyst. Your goal is to answer questions by generatin
 **Capabilities:**
 1. READ-ONLY access. Never modify data.
 2. Return ONLY the SQL query inside a markdown block: ```sql ... ```.
-3. If the user asks for a visualization (chart, plot), select the data needed for that plot.
+3. **Visualizations:** If the user asks for a chart/graph, you must ALSO return a JSON block specifying the plot details *after* the SQL.
 
 **Database Schema:**
 {schema}
 
 **Rules:**
-1. Use `LIKE` for string matching if unsure of exact case (e.g. `UPPER(col) LIKE '%VALUE%'`).
-2. Always alias tables in joins for clarity.
-3. If the answer requires data from multiple tables, use the "Inferred Relationships" provided in the schema to JOIN them.
-4. LIMIT results to 100 unless explicitly asked for more.
+1. Use `LIKE` for string matching (e.g. `UPPER(col) LIKE '%VALUE%'`).
+2. Always alias tables in joins.
+3. If the answer requires data from multiple tables, use the "Inferred Relationships" to JOIN them.
+
+**Visualization JSON Format (Optional):**
+If a chart is requested, append this JSON after the SQL block:
+```json
+{{
+    "plot_type": "bar",
+    "x_axis": "column_name_for_x",
+    "y_axis": "column_name_for_y",
+    "title": "Chart Title"
+}}
 """
 
 def get_system_prompt():
-    """
-    Retrieves the schema and formats the system prompt.
-    Future upgrade: 'prune_schema' logic can go here to filter tables based on the user query.
-    """
+    """Retrieves the schema and formats the system prompt."""
     schema_str = get_database_schema_string()
+    return BASE_SYSTEM_PROMPT.format(schema=schema_str)
     return BASE_SYSTEM_PROMPT.format(schema=schema_str)
