@@ -5,15 +5,44 @@ import plotly.io as pio
 import sys
 import os
 
-# Add root to path
+# --- CRITICAL: FIX PYTHON PATH ---
+# We must do this BEFORE importing local modules like 'agent' or 'database'
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+# --- LOCAL IMPORTS ---
 from agent.graph import app as agent_app
+from database.ingestion import ingest_directory 
 
+# --- APP CONFIG ---
 st.set_page_config(page_title="Data Cadet Agent", layout="wide")
+
 st.title("🤖 Delivery Cadet Challenge: AI Data Agent")
 st.markdown("---")
 
+# --- SIDEBAR: DATA CONTROLS ---
+with st.sidebar:
+    st.header("🗄️ Data Management")
+    st.info("Supported formats: .csv, .xlsx, .xls")
+    
+    if st.button("🔄 Reset & Reload Data", type="primary"):
+        with st.spinner("Flushing database and reloading from /data..."):
+            try:
+                # Force reset_db=True to clear old CSV tables
+                # Ensure you have run: pip install openpyxl
+                tables = ingest_directory("./data", reset_db=True)
+                if tables:
+                    st.success(f"Loaded {len(tables)} tables: {', '.join(tables)}")
+                else:
+                    st.warning("No files found in /data!")
+                
+                # Clear chat history so the agent doesn't get confused by old context
+                st.session_state.messages = []
+            except Exception as e:
+                st.error(f"Error loading data: {e}")
+
+# --- CHAT INTERFACE ---
+
+# Initialize History
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -27,6 +56,7 @@ for message in st.session_state.messages:
             with st.expander("View SQL"):
                 st.code(message["sql"], language="sql")
 
+# Input Handling
 if prompt := st.chat_input("Ask a question about your data..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
@@ -39,13 +69,10 @@ if prompt := st.chat_input("Ask a question about your data..."):
         
         try:
             inputs = {"question": prompt, "retry_count": 0}
-            
-            # Accumulate state here because stream() gives partial updates
             full_state = {} 
             
             for output in agent_app.stream(inputs):
                 for key, value in output.items():
-                    # Merge new value into full_state
                     full_state.update(value)
                     
                     if key == "generate":

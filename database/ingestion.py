@@ -1,48 +1,62 @@
 import pandas as pd
 import os
 from sqlalchemy import text
-from database.connection import get_db_engine
+from database.connection import get_db_engine, DB_NAME
 
 def sanitize_column_name(col_name: str) -> str:
-    """
-    Converts 'Order Date' -> 'order_date', 'Total ($)' -> 'total_dollars'
-    """
     return (
-        col_name.strip()
+        str(col_name).strip()
         .lower()
         .replace(" ", "_")
         .replace("-", "_")
         .replace("(", "")
         .replace(")", "")
         .replace("$", "dollars")
+        .replace("/", "_per_")
     )
 
-def ingest_csv_directory(directory_path: str):
+def ingest_directory(directory_path: str, reset_db: bool = False):
     """
-    Reads all .csv files in the directory and loads them into SQLite.
+    Reads CSV and Excel files.
+    reset_db: If True, deletes the existing .db file to ensure a clean slate.
     """
+    # 1. Reset Database if requested
+    if reset_db and os.path.exists(DB_NAME):
+        try:
+            os.remove(DB_NAME)
+            print("🗑️ Old database deleted.")
+        except PermissionError:
+            print("⚠️ Could not delete DB file (it might be in use). Proceeding with overwrite...")
+
     engine = get_db_engine()
     loaded_tables = []
 
     if not os.path.exists(directory_path):
-        raise FileNotFoundError(f"Directory {directory_path} not found.")
+        os.makedirs(directory_path)
+        print(f"⚠️ Created missing directory: {directory_path}")
+        return []
 
-    files = [f for f in os.listdir(directory_path) if f.endswith('.csv')]
+    # 2. Scan for files
+    files = [f for f in os.listdir(directory_path) if f.endswith(('.csv', '.xlsx', '.xls'))]
     
-    print(f"📂 Found {len(files)} CSV files. Starting ingestion...")
+    print(f"📂 Found {len(files)} data files.")
 
     for file in files:
         table_name = os.path.splitext(file)[0].lower().replace(" ", "_")
         file_path = os.path.join(directory_path, file)
         
         try:
-            # Read CSV
-            df = pd.read_csv(file_path)
+            # Detect format
+            if file.endswith('.csv'):
+                df = pd.read_csv(file_path)
+            else:
+                # Read Excel (default to first sheet)
+                df = pd.read_excel(file_path)
             
             # Sanitize columns
             df.columns = [sanitize_column_name(c) for c in df.columns]
             
-            # Load to DB (Replace ensures fresh start)
+            # Load to DB
             df.to_sql(table_name, engine, if_exists='replace', index=False)
             
             loaded_tables.append(table_name)
