@@ -1,5 +1,6 @@
 import os
 import json
+import re # Added for parsing
 from dotenv import load_dotenv
 
 from langgraph.graph import StateGraph, END
@@ -17,7 +18,7 @@ load_dotenv()
 if not os.getenv("GROQ_API_KEY"):
     raise ValueError("GROQ_API_KEY not found in .env file.")
 
-# Initialize LLM (Using 3.3 as 3.1 is deprecated)
+# Initialize LLM (Using 3.3)
 llm = ChatGroq(model_name="llama-3.3-70b-versatile", temperature=0)
 
 # --- NODES ---
@@ -35,7 +36,7 @@ def generate_query_node(state: AgentState):
     content = response.content
     
     # Extract SQL
-    import re
+    
     sql_match = re.search(r"```sql\n(.*?)\n```", content, re.DOTALL)
     sql = sql_match.group(1).strip() if sql_match else content.strip()
     
@@ -71,7 +72,7 @@ def repair_node(state: AgentState):
     response = llm.invoke(messages)
     content = response.content
     
-    import re
+
     sql_match = re.search(r"```sql\n(.*?)\n```", content, re.DOTALL)
     new_sql = sql_match.group(1).strip() if sql_match else content.strip()
     
@@ -85,37 +86,75 @@ def summarize_node(state: AgentState):
     if not result:
         return {"final_answer": "Query executed successfully but returned no data.", "visualization_spec": None}
     
-    # 1. Generate Summary
+    # 1. Ask LLM to Summarize AND confirm Plot Type based on actual data
     summary_prompt = (
         f"User Question: {question}\n"
         f"SQL Query Used: {sql}\n"
         f"Data Retrieved: {str(result[:10])} ... (truncated)\n\n"
-        "Provide a concise summary of the data."
+        "1. Provide a concise summary of the data.\n"
+        "2. If the user asked for a visualization, output the JSON block for the best plot type (Bar vs Pie) based on this data.\n"
+        "Format:\n"
+        "Summary text here...\n"
+        "```json\n{...}\n```"
     )
+    
     response = llm.invoke([HumanMessage(content=summary_prompt)])
-    final_text = response.content
-    safe_text = obfuscate_pii(final_text)
+    raw_content = response.content
 
-    # 2. Heuristic Auto-Plotter
+    # 2. Extract JSON spec if LLM provided it
     plot_spec = None
-    # Trigger if user asked for plot OR if the data structure screams "chart" (2 cols)
-    if "plot" in question.lower() or "chart" in question.lower() or "graph" in question.lower():
+    json_match = re.search(r"```json\n(.*?)\n```", raw_content, re.DOTALL)
+    
+    if json_match:
+        try:
+            plot_config = json.loads(json_match.group(1))
+            # Validate keys exist
+            if "plot_type" in plot_config and "x_axis" in plot_config:
+                plot_spec = generate_plot_config(
+                    data=result,
+                    plot_type=plot_config["plot_type"],
+                    x_axis=plot_config["x_axis"],
+                    y_axis=plot_config["y_axis"],
+                    title=plot_config.get("title", "Data Visualization")
+                )
+        except Exception as e:
+            print(f"JSON Parsing failed: {e}")
+
+    # 3. FALLBACK: Smart Heuristic if LLM failed but User asked for it
+    trigger_words = ["plot", "graph", "chart", "visualize", "visualization"]
+    if not plot_spec and any(word in question.lower() for word in trigger_words):
         try:
             if len(result) > 0:
                 keys = list(result[0].keys())
                 if len(keys) >= 2:
-                    # Assume Col 0 = X, Col -1 = Y
+                    # Smart Logic: If < 8 categories, maybe Pie? Otherwise Bar.
+                    x_col = keys[0]
+                    y_col = keys[-1]
+                    
+                    # Check cardinality of X column (to decide pie vs bar)
+                    unique_x = set(row[x_col] for row in result)
+                    
+                    if len(unique_x) < 8 and "share" in question.lower() or "percentage" in question.lower():
+                        chart_type = "pie"
+                    else:
+                        chart_type = "bar"
+                        
                     plot_spec = generate_plot_config(
                         data=result, 
-                        plot_type="bar", 
-                        x_axis=keys[0], 
-                        y_axis=keys[-1], 
+                        plot_type=chart_type, 
+                        x_axis=x_col, 
+                        y_axis=y_col, 
                         title=f"Visualization: {question}"
                     )
         except Exception:
-            pass # Fail silently on plot, deliver text
+            pass 
+
+    # 4. Clean Text (Remove the JSON block from the final answer text)
+    final_text = re.sub(r"```json\n.*?\n```", "", raw_content, flags=re.DOTALL).strip()
+    safe_text = obfuscate_pii(final_text)
 
     return {"final_answer": safe_text, "visualization_spec": plot_spec}
+
  
 
 # --- FLOW ---
