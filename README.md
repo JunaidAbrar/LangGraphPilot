@@ -46,7 +46,7 @@ The agent follows a deterministic control flow:
 ### 1. Clone & Environment
 ```bash
 git clone https://github.com/<YOUR USERNAME>/LangGraphPilot
-cd delivery-cadet-challenge
+
 
 # Create Virtual Environment
 python -m venv venv
@@ -59,4 +59,5 @@ pip install -r requirements.txt
 Place your .csv or .xlsx files in the data/ folder. (The agent will automatically ingest them on startup or via the "Reload" button in the UI). 
 
 # Run the Application
+cd delivery-cadet-challenge
 streamlit run ui/app.py
