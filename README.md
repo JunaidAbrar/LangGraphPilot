@@ -1,3 +1,9 @@
+## 🎥 Project Demo
+
+[![Watch the demo](https://img.youtube.com/vi/YOUTUBE_VIDEO_ID/0.jpg)](https://youtu.be/cBoaa8jBBKI)
+
+
+
 # LangGraph Pilot #insightfactoryai #cadet_challenge
 *A dataset-agnostic SQL agent that navigates natural language queries with precision*
 # 🤖 Delivery Cadet Challenge: AI Data Agent
